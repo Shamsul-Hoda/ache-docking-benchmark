@@ -1,0 +1,14 @@
+name: ache-docking
+channels:
+  - conda-forge
+dependencies:
+  - rdkit
+  - scikit-learn
+  - vina
+  - matplotlib
+  - openbabel
+  - meeko
+  - python=3.11
+  - jupyterlab
+  - pandas
+prefix: /home/shams/miniconda3/envs/ache-docking
