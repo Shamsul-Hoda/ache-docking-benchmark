@@ -14,7 +14,7 @@ Benchmarking AutoDock Vina for identifying acetylcholinesterase (AChE) inhibitor
 | 6 | Analysis (ROC AUC, enrichment factor, size bias) | Planned |
 | 7 | Write-up | Planned |
 
-## Stage 3 result: redocking validation
+## Results: docking protocol validation (redocking)
 
 Donepezil was redocked into human AChE (PDB 4EY7, chain A) to check that the docking protocol reproduces the experimental binding pose.
 
