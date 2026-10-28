@@ -8,3 +8,4 @@
 - 2026-10-20: Day 6. Receptor chain A cleaned (PyMOL) and converted with obabel -xr -p 7.4 (5090 atoms in PDBQT). Box centre -14.108, -43.833, 27.670, size 22. First Vina run: mode 1 -11.77 kcal/mol, right location and orientation, benzyl ring differs; mode 4 (-11.18) closer to crystal. Next: Stage 3 redocking with correct stereo and RMSD.
 - 2026-10-24: Redocking validated. R-donepezil top pose RMSD 0.75 A vs crystal (S form 3.14 A).
 - 2026-10-27: DUD-E still down. Using DEKOIS 2.0 AChE (Zenodo 8131256): 40 actives, 1181 decoys (19 fewer than official 1200). Raw data not committed; see scripts/get_dekois_ache.sh.
+- 2026-10-28: prepare_ligands.py: 1219/1221 ligands prepared (40 actives, 1179 decoys); 2 decoys failed 3D embedding (ZINC23083826, ZINC23088183).
