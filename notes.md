@@ -9,3 +9,4 @@
 - 2026-10-24: Redocking validated. R-donepezil top pose RMSD 0.75 A vs crystal (S form 3.14 A).
 - 2026-10-27: DUD-E still down. Using DEKOIS 2.0 AChE (Zenodo 8131256): 40 actives, 1181 decoys (19 fewer than official 1200). Raw data not committed; see scripts/get_dekois_ache.sh.
 - 2026-10-28: prepare_ligands.py: 1219/1221 ligands prepared (40 actives, 1179 decoys); 2 decoys failed 3D embedding (ZINC23083826, ZINC23088183).
+- 2026-10-28: Batch docking complete. 1219/1219 ligands docked into 4EY7 chain A (same box and settings as redocking validation), 4.9 h total compute.
