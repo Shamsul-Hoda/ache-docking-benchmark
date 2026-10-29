@@ -1,0 +1,6 @@
+metric,value
+AUC docking score,0.709
+AUC heavy atoms only,0.576
+AUC molecular weight only,0.542
+AUC ligand efficiency,0.572
+correlation score vs heavy atoms,-0.779
