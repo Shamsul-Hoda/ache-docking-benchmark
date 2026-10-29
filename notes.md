@@ -12,3 +12,4 @@
 - 2026-10-28: Batch docking complete. 1219/1219 ligands docked into 4EY7 chain A (same box and settings as redocking validation), 4.9 h total compute.
 - 2026-10-29: Analysis. AUC 0.709 (95% CI 0.591-0.818), EF1% 15.2x, EF5% 7.5x, EF10% 5.7x, 8 actives in top 20. Early enrichment strong; small actives rank poorly.
 - 2026-10-29: Size-bias analysis. Score correlates with heavy atoms (r=-0.78) but size-only ranking gives AUC 0.576 vs 0.709 for docking, so enrichment is not explained by size. Ligand efficiency ranking is worse (AUC 0.572, EF1% 0x).
+- 2026-10-29: PyMOL inspection of top hits. Top active (BDB50271517, a bivalent tacrine-type inhibitor) and top decoy (ZINC14950930) both span the gorge between Trp86 and Trp286, comparably to crystal donepezil. Vina's false positives are geometrically reasonable, which explains the modest AUC.
