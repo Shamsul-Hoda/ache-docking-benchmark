@@ -1,0 +1,8 @@
+metric,value
+AUC,0.709
+AUC 95% CI low,0.591
+AUC 95% CI high,0.818
+EF 1%,15.2
+EF 5%,7.5
+EF 10%,5.7
+actives in top 20,8.0

@@ -10,3 +10,4 @@
 - 2026-10-27: DUD-E still down. Using DEKOIS 2.0 AChE (Zenodo 8131256): 40 actives, 1181 decoys (19 fewer than official 1200). Raw data not committed; see scripts/get_dekois_ache.sh.
 - 2026-10-28: prepare_ligands.py: 1219/1221 ligands prepared (40 actives, 1179 decoys); 2 decoys failed 3D embedding (ZINC23083826, ZINC23088183).
 - 2026-10-28: Batch docking complete. 1219/1219 ligands docked into 4EY7 chain A (same box and settings as redocking validation), 4.9 h total compute.
+- 2026-10-29: Analysis. AUC 0.709 (95% CI 0.591-0.818), EF1% 15.2x, EF5% 7.5x, EF10% 5.7x, 8 actives in top 20. Early enrichment strong; small actives rank poorly.
