@@ -1,101 +1,175 @@
-# Benchmarking AutoDock Vina for acetylcholinesterase inhibitors
+# Benchmarking AutoDock Vina on acetylcholinesterase
 
-Can docking scores separate known AChE inhibitors from property-matched decoys, and is any separation explained by molecule size alone?
+Protocol validation, a 1,219-compound virtual screen, and a control that tests whether the result is just molecular size.
 
-A fully scripted, reproducible virtual screening benchmark: protocol validation by redocking, screening of 1,219 compounds, and a size-bias control.
+Docking gives every molecule a score. It never refuses. Hand it a sugar, a dye, or a genuine drug, and it will place all three in the pocket and rate them. So the useful question is not whether a molecule fits, because almost anything fits something. The question is whether the ranking is informative: do the compounds that actually inhibit the enzyme end up near the top?
 
-## Key results
+This repository is my attempt to answer that for one target. Everything is scripted and seeded, so you can rerun it.
+
+---
+
+## The test set
+
+To ask the question properly you need molecules whose answer you already know. I used the DEKOIS 2.0 acetylcholinesterase set: 40 compounds with measured inhibition, and 1,179 decoys drawn from ZINC and matched to the actives on weight, logP, charge, hydrogen bonding and flexibility.
+
+The decoys are the point. If they were small and polar, Vina would separate them trivially and I would learn nothing.
+
+## Before screening anything, I checked the protocol worked
+
+The control is redocking: take donepezil out of its own crystal structure, rebuild it from scratch, dock it back, and see whether the computer puts it where the X-ray experiment says it is.
+
+My first attempt gave 3.14 Å RMSD. That fails, since the usual threshold is 2 Å.
+
+The score, though, was −11.77 kcal/mol, which looks excellent. If I had only looked at the score, I would have concluded the setup was fine and moved on to screening a thousand compounds with a broken protocol.
+
+The cause was stereochemistry. Donepezil has one chiral centre, and the crystal ligand is the R form. My SMILES string had not specified which, so RDKit picked one when it built the 3D structure, and it picked S. Vina can translate, rotate and twist rotatable bonds, but it cannot break a bond to invert a chiral centre, so it was being asked to fit a left hand into a right glove.
+
+Specifying the R enantiomer explicitly and rebuilding gave **0.75 Å**, with a score of −11.81.
+
+<p align="center">
+  <img src="results/redock_pose_overlay.png" width="60%" alt="Crystal pose and Vina top pose overlaid">
+</p>
+<p align="center"><em>Crystallographic donepezil in grey, Vina's top-ranked pose in yellow, after the stereochemistry was fixed.</em></p>
+
+The two scores differ by 0.04 kcal/mol. The two poses differ by 2.4 Å. That gap between scoring well and being correct is the most useful thing I took from this project, and it is why I would not trust a docking result that has not been validated this way first.
+
+## Screening the library
+
+With the protocol validated, I docked all 1,219 compounds into the same rigid receptor, with the same box and the same settings. One ligand at a time, each independent of the others, roughly like running 1,219 separate assay wells. It took 4.9 hours on twelve CPU threads.
+
+Then I sorted everything by score and looked at what came out on top.
+
+**Eight of the top twenty were actives.** Picking twenty compounds at random from this library would give 0.7 on average, usually zero. So the ranking carries real information.
+
+<p align="center">
+  <img src="results/roc_curve.png" width="46%" alt="ROC curve, AUC 0.709">
+  <img src="results/score_distributions.png" width="46%" alt="Score distributions for actives and decoys">
+</p>
+<p align="center"><em>Left: ROC curve, AUC 0.709. Right: the two score distributions, showing how much they overlap.</em></p>
+
+The AUC came out at **0.709**, meaning a randomly chosen active beats a randomly chosen decoy about 71% of the time. With only 40 actives that number is not precise, so I bootstrapped it: 2,000 resamples gave a 95% interval of **0.591 to 0.818**. The whole interval sits above 0.5, so the effect is real, but it is wide, and quoting 0.709 on its own would pretend to a precision I do not have.
+
+For screening, the more relevant number is enrichment at the top, because nobody tests the bottom of a ranking. In the top 1%, twelve compounds, six were actives: **15.2 times better than chance**. At 5% it drops to 7.5×, at 10% to 5.7×. That falling pattern is what you want, because it means the very top of the list is the part to trust.
+
+## The shape of the curve was more informative than the number
+
+The ROC curve climbs steeply for the first few molecules, then goes **flat** for a long stretch, then rises again near the end.
+
+Flat means stepping sideways: hundreds of decoys selected, and not a single new active found. That is not what a smoothly mediocre method looks like. It means the actives sit in two separate clumps, one near the top of the ranking and one near the bottom, with nothing in between.
+
+The size distribution explains it.
+
+<p align="center">
+  <img src="results/dekois_heavy_atoms.png" width="46%" alt="Molecule size distribution">
+  <img src="results/score_vs_size.png" width="46%" alt="Score versus heavy atom count">
+</p>
+<p align="center"><em>Left: the library has two size populations. Right: score against size, with actives in orange.</em></p>
+
+The AChE gorge is about 20 Å deep with a binding site at each end, so medicinal chemists have made inhibitors long enough to reach both. Those molecules are large, and here they score −12 to −14. But roughly seven of the forty actives are small, rigid, tacrine-like compounds that occupy only one end. They are genuine inhibitors, some of them potent, and Vina puts them at the bottom of the list at −6 to −7.
+
+That is not a flaw in my setup. Vina's scoring function sums atom-to-atom contacts, so a molecule with twelve heavy atoms cannot compete with one that has forty, however efficiently it binds. A screen built on this ranking would find the dual-site binders and miss the entire tacrine class.
+
+## Then I tried to break the result
+
+Since score correlates with size at r = −0.78, the obvious objection is that Vina is not recognising anything. It is rewarding bigger molecules, and the actives happen to be slightly bigger.
+
+That is testable. Rank the whole library by heavy-atom count, do no docking at all, and compute the AUC.
+
+| Ranking method | AUC |
+|---|---|
+| **Docking score** | **0.709** |
+| Heavy atom count, no docking | 0.576 |
+| Molecular weight, no docking | 0.542 |
+| Ligand efficiency (score divided by heavy atoms) | 0.572 |
+
+Size alone gives 0.576, barely above random. So the enrichment is not a size artefact, and docking contributes something real. That is the result I would defend if someone pushed back on this project.
+
+The ligand efficiency row was a surprise. It is a standard medicinal chemistry correction and I expected it to help. Instead it made things worse, and put **zero** actives in the top twelve. Dividing by atom count over-corrects: it promotes small molecules, and in this library most small molecules are decoys. Vina's function already carries a flexibility penalty and was fitted against real binding data, so stacking a cruder correction on top of it destroys the signal rather than refining it.
+
+## Why Vina cannot do better here
+
+I opened the top-ranked active and the top-ranked decoy in PyMOL expecting the decoy to look obviously wrong. It does not.
+
+<p align="center">
+  <img src="results/top_active_vs_decoy.png" width="60%" alt="Top-ranked active and decoy in the AChE gorge">
+</p>
+<p align="center"><em>Top-ranked active in orange, top-ranked decoy in cyan, crystallographic donepezil in green.</em></p>
+
+They have near-identical scores (−13.99 and −13.74) and near-identical sizes, and both run the full length of the gorge between Trp286 at the entrance and Trp86 at the bottom, exactly as donepezil does. The decoy is not jammed into a surface groove or folded into something implausible. It fills the site convincingly.
+
+That is the ceiling on performance, and it is a property of this target rather than a flaw in the method. The gorge is a long aromatic tunnel with a tryptophan at each end, so almost any elongated aromatic cation can stack between them and collect contacts. The decoys were deliberately built to share those properties. What distinguishes a real inhibitor is finer: exact geometry against those tryptophans, the right hydrogen bond at the right distance. An empirical function with about six terms cannot resolve it.
+
+One caveat worth stating plainly. That decoy has never been tested against AChE. DEKOIS decoys are assumed inactive, not measured. So its high score is either a genuine false positive or an untested inhibitor, and nothing in this repository can tell you which.
+
+## What I would check next
+
+- **A second scoring function.** Vinardo uses the same search with re-optimised terms, so comparing them on this identical setup would isolate the scoring contribution cleanly.
+- **A second dataset.** I planned to use DUD-E, but the server was unreachable throughout this work. The scripts would run on it unchanged.
+- **Receptor flexibility.** Everything here used one rigid structure solved with donepezil bound, which may quietly favour donepezil-like ligands.
+- **Whether that top decoy binds.** An Ellman assay would settle it in an afternoon.
+
+## All results
 
 | Metric | Value |
 |---|---|
-| Redocking validation (donepezil, R enantiomer) | **0.75 Å RMSD** (threshold: 2 Å) |
-| Same with the S enantiomer | 3.14 Å (fail) |
+| Redocking RMSD, R enantiomer | 0.75 Å (threshold 2 Å) |
+| Redocking RMSD, S enantiomer | 3.14 Å |
 | Compounds screened | 1,219 (40 actives, 1,179 decoys) |
-| **ROC AUC** | **0.709** (95% CI 0.591–0.818) |
-| **Enrichment factor, top 1%** | **15.2×** (6 actives in the top 12) |
-| Enrichment factor, top 5% / 10% | 7.5× / 5.7× |
+| ROC AUC | 0.709 (95% CI 0.591 to 0.818, 2,000 bootstraps) |
+| Enrichment factor, top 1% / 5% / 10% | 15.2× / 7.5× / 5.7× |
 | Actives in the top 20 | 8 (0.7 expected by chance) |
-| **Size-only baseline AUC** (heavy atom count, no docking) | **0.576** |
-| Ligand efficiency ranking AUC | 0.572 |
-| Correlation: score vs heavy atoms | r = −0.78 |
-
-**Summary.** Vina ranked actives above decoys 71% of the time, with strong early enrichment: half of its top 12 predictions were experimentally confirmed inhibitors. Docking scores correlated strongly with molecular size, but ranking by size alone performed close to random (0.576), so the enrichment reflects structural recognition rather than a size artefact. Ligand efficiency, a common size correction, performed worse than the raw score.
-
-## Figures
-
-<p align="center">
-  <img src="results/redock_pose_overlay.png" width="47%" alt="Redocking validation: crystal pose and Vina top pose">
-  <img src="results/roc_curve.png" width="47%" alt="ROC curve, AUC 0.709">
-</p>
-
-**Left:** protocol validation. Crystallographic donepezil (grey) and Vina's top-ranked pose (yellow), RMSD 0.75 Å.
-**Right:** screening performance across the full library.
-
-<p align="center">
-  <img src="results/score_vs_size.png" width="47%" alt="Docking score versus heavy atom count">
-  <img src="results/top_active_vs_decoy.png" width="47%" alt="Top-ranked active and decoy in the AChE gorge">
-</p>
-
-**Left:** score versus molecular size (r = −0.78). Within any size range, actives still score better than decoys.
-**Right:** the top-ranked active (orange) and top-ranked decoy (cyan) overlaid on crystallographic donepezil (green). Both span the gorge between Trp286 and Trp86, which explains why the scoring function cannot fully separate them.
+| Size-only baseline AUC | 0.576 |
+| Score against heavy atoms | r = −0.78 |
+| Docking time | 4.9 hours, 12 CPU threads |
 
 ## Methods
 
-**Receptor.** PDB 4EY7, human acetylcholinesterase in complex with donepezil, X-ray 2.35 Å. Chain A protein retained (PyMOL), waters and heteroatoms removed, hydrogens added at pH 7.4 and converted to PDBQT (Open Babel, rigid receptor).
+**Receptor.** PDB 4EY7, human acetylcholinesterase with donepezil bound, X-ray at 2.35 Å. I kept chain A protein only, removed waters and heteroatoms, added hydrogens at pH 7.4 and converted to PDBQT with Open Babel. The receptor is rigid throughout.
 
-**Search box.** Centred on the centroid of the crystallographic donepezil (−14.108, −43.833, 27.670), 22 × 22 × 22 Å, covering the full gorge from the catalytic site to the peripheral site. Stored in `prep/vina_config.txt` and reused unchanged for every ligand.
+**Search box.** Centred on the centroid of the crystallographic donepezil at (−14.108, −43.833, 27.670), 22 Å on each side, covering the gorge from the catalytic site to the peripheral site. Stored in `prep/vina_config.txt` and reused without modification for every ligand, so all scores are comparable.
 
-**Protocol validation.** Donepezil was rebuilt from SMILES and redocked. The initial build had the S configuration while the crystal ligand is R; since Vina cannot invert a chiral centre, the correct enantiomer was specified explicitly. The R form reproduced the native pose at 0.75 Å RMSD, the S form at 3.14 Å, despite near-identical scores (−11.81 vs −11.77).
+**Ligands.** Built from SMILES with RDKit using ETKDGv3 and seed 42, optimised with MMFF, converted to PDBQT with Meeko. 1,219 of 1,221 compounds prepared successfully; two decoys failed 3D embedding and are logged in `prep/ligand_prep_log.csv`.
 
-**Benchmark set.** DEKOIS 2.0 acetylcholinesterase set: 40 experimentally confirmed actives (BindingDB) and property-matched decoys (ZINC). Actives and decoys are matched on molecular weight, logP, hydrogen-bond donors and acceptors, rotatable bonds and formal charge.
+**Docking.** AutoDock Vina 1.2, exhaustiveness 8, nine modes, seed 42.
 
-**Ligand preparation.** SMILES to 3D with RDKit (ETKDGv3, seed 42), MMFF optimisation, PDBQT via Meeko. 1,219 of 1,221 compounds prepared successfully; 2 decoys failed 3D embedding and were excluded.
-
-**Docking.** AutoDock Vina 1.2, exhaustiveness 8, 9 modes, seed 42. Each ligand docked independently into the same rigid receptor. Total: 4.9 hours on 12 CPU threads.
-
-**Analysis.** ROC AUC with a 95% confidence interval from 2,000 bootstrap resamples; enrichment factors at 1%, 5% and 10%; size-bias control by ranking the library on heavy atom count and on molecular weight with no docking.
+**Analysis.** ROC AUC with a 2,000-sample bootstrap confidence interval, enrichment factors at 1%, 5% and 10%, and size controls by ranking on heavy-atom count and on molecular weight with no docking involved.
 
 ## Limitations
 
-- **Decoys are assumed inactive, not measured.** High-scoring decoys may be scoring-function false positives or untested actives, so the reported AUC and enrichment values are lower bounds.
-- **Only 40 actives**, giving a wide confidence interval (±0.11 AUC).
-- **Single rigid holo receptor.** The 4EY7 pocket is shaped around donepezil, which may favour similar ligands (holo bias). Receptor flexibility and alternative structures were not explored.
-- **Small actives are systematically missed.** Roughly 7 of the 40 actives are compact, tacrine-like molecules. Vina's scoring scales with contact count, so these score poorly despite genuine potency. This produces the long flat section in the ROC curve.
-- **No explicit water, no covalent binders, approximate scoring** (error of a few kcal/mol).
-- This DEKOIS copy contains 1,181 of the official 1,200 decoys.
+- **The decoys are assumed inactive, not measured.** Some fraction of them probably do bind, which means the AUC and enrichment figures here are lower bounds on true performance.
+- **Forty actives is a small sample**, hence the ±0.11 confidence interval on the AUC.
+- **One rigid holo receptor.** The 4EY7 pocket is shaped around donepezil and may favour similar ligands.
+- **Small actives are systematically missed**, as described above. This is the main failure mode.
+- **No explicit water, no covalent binders**, and the scoring function is accurate only to a few kcal/mol, so these scores are for ranking, not for estimating affinity.
+- The copy of DEKOIS I used contains 1,181 of the official 1,200 decoys.
 
-## Repository structure
-
-```
-data/      input structures; DEKOIS set fetched by script (not committed)
-prep/      prepared receptor and ligands, Vina configuration
-scripts/   notebooks 01-05 and the preparation, docking and box-drawing scripts
-results/   scores, rankings, metrics and figures
-notes.md   dated project log
-```
-
-## Reproduce
+## Running it yourself
 
 ```bash
 conda env create -f environment.yml
 conda activate ache-docking
-bash scripts/get_dekois_ache.sh        # download the benchmark set
-python scripts/prepare_ligands.py      # SMILES to PDBQT
-python scripts/dock_ligands.py         # batch docking (resumable)
+bash scripts/get_dekois_ache.sh        # fetch the benchmark set
+python scripts/prepare_ligands.py      # SMILES to 3D to PDBQT
+python scripts/dock_ligands.py         # batch docking, resumable
 ```
 
-Then run the notebooks in `scripts/` in order. Random seeds are fixed throughout, so results are reproducible.
+Then run the notebooks in `scripts/` in order. Every random seed is fixed, so you should get the same numbers.
 
-## Tools
+```
+data/      input structures; the DEKOIS set is fetched by script, not committed
+prep/      prepared receptor and ligands, Vina configuration
+scripts/   notebooks 01-05, plus the preparation, docking and box-drawing scripts
+results/   scores, rankings, metrics and figures
+notes.md   dated log of what I did each day, including the things that went wrong
+```
 
-RDKit, Meeko, AutoDock Vina 1.2, Open Babel, PyMOL (open-source), pandas, scikit-learn, matplotlib, JupyterLab. Exact versions in `environment.yml`.
+**Tools:** RDKit, Meeko, AutoDock Vina 1.2, Open Babel, PyMOL, pandas, scikit-learn, matplotlib. Exact versions in `environment.yml`.
 
 ## References
 
 - Eberhardt J, Santos-Martins D, Tillack AF, Forli S. AutoDock Vina 1.2.0: new docking methods, expanded force field, and Python bindings. *J Chem Inf Model* 2021, 61, 3891-3898.
 - Bauer MR, Ibrahim TM, Vogel SM, Boeckler FM. Evaluation and optimization of virtual screening workflows with DEKOIS 2.0. *J Chem Inf Model* 2013, 53, 1447-1462.
 - Cheung J, et al. Structures of human acetylcholinesterase in complex with pharmacologically important ligands. *J Med Chem* 2012, 55, 10282-10286. (PDB 4EY7)
-- Mysinger MM, Carchia M, Irwin JJ, Shoichet BK. Directory of Useful Decoys, Enhanced (DUD-E). *J Med Chem* 2012, 55, 6582-6594.
 
 ## Author
 
