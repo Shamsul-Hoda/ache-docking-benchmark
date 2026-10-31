@@ -12,4 +12,3 @@ dependencies:
   - jupyterlab
   - pandas
   - pymol-open-source
-prefix: /home/shams/miniconda3/envs/ache-docking
