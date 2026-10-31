@@ -4,7 +4,21 @@ Protocol validation, a 1,219-compound virtual screen, and a control that tests w
 
 Docking gives every molecule a score. It never refuses. Hand it a sugar, a dye, or a genuine drug, and it will place all three in the pocket and rate them. So the useful question is not whether a molecule fits, because almost anything fits something. The question is whether the ranking is informative: do the compounds that actually inhibit the enzyme end up near the top?
 
-This repository is my attempt to answer that for one target. Everything is scripted and seeded, so you can rerun it.
+This repository is my attempt to answer that for one target. Everything is scripted and seeded, so you can rerun it. ## The workflow
+
+```mermaid
+flowchart TD
+    A["PDB 4EY7<br>AChE with donepezil bound"] --> B["Receptor preparation<br>chain A only, waters removed,<br>hydrogens added, converted to PDBQT"]
+    A --> C["Crystallographic donepezil extracted<br>its centroid defines the 22 Å search box"]
+    B --> D["Redocking validation<br>donepezil rebuilt from SMILES and docked back"]
+    C --> D
+    D --> E["RMSD 0.75 Å against the crystal pose<br>protocol accepted"]
+    E --> F["DEKOIS 2.0 AChE benchmark set<br>40 actives, 1,179 property-matched decoys"]
+    F --> G["Ligand preparation<br>SMILES to 3D to PDBQT, 1,219 of 1,221 succeeded"]
+    G --> H["Batch docking<br>same rigid receptor, same box, same seed"]
+    H --> I["Statistical evaluation<br>ROC AUC, bootstrap CI, enrichment factors"]
+    I --> J["Size-bias control<br>ranking by heavy atoms with no docking"]
+```
 
 ---
 
