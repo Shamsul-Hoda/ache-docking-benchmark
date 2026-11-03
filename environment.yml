@@ -12,3 +12,7 @@ dependencies:
   - jupyterlab
   - pandas
   - pymol-open-source
+  - pip
+  - pip:
+      - prolif
+      - pdb2pqr
