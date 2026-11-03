@@ -1,0 +1,5 @@
+method,AUC,CI_low,CI_high,EF_1%,hits_top_1%,EF_5%,hits_top_5%
+Vina score,0.709,0.591,0.818,15.2,6/12,7.5,15/61
+Heavy atoms only,0.576,0.47,0.68,5.1,2/12,3.0,6/61
+RF on Morgan FP,0.875,0.78,0.952,30.5,12/12,16.5,33/61
+RF on interaction FP,0.794,0.687,0.888,25.4,10/12,11.5,23/61
