@@ -1,0 +1,5 @@
+method,median_rank_small_actives,median_rank_larger_actives
+Vina score,1094.0,46.0
+Heavy atoms only,1065.0,155.0
+RF on Morgan FP,550.0,14.0
+RF on interaction FP,907.5,17.5
