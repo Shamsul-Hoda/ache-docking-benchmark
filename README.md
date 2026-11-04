@@ -179,11 +179,106 @@ notes.md   dated log of what I did each day, including the things that went wron
 
 **Tools:** RDKit, Meeko, AutoDock Vina 1.2, Open Babel, PyMOL, pandas, scikit-learn, matplotlib. Exact versions in `environment.yml`.
 
+---
+
+## ML extension: does a learned model beat the score?
+
+Vina's scoring function was fitted once, against a general set of protein-ligand complexes, and it knows nothing about acetylcholinesterase specifically. The obvious follow-up question is whether a model allowed to learn from this dataset does better, and in particular whether it recovers the small inhibitors the physics-based score buries.
+
+I built two, deliberately different.
+
+**Ligand-only features.** Morgan fingerprints, radius 2, 2,048 bits, from the DEKOIS SMILES. The model sees chemistry and nothing else.
+
+**Interaction features.** For every compound I rebuilt Vina's top-ranked pose and ran ProLIF against the protonated receptor, producing 115 bits of the form `TRP86.A|PiStacking`. The model sees how the molecule sits in the gorge. Poses were rebuilt from the SMILES Meeko writes into the PDBQT, so bond orders and stereochemistry come from the original structure rather than being guessed from coordinates.
+
+Both go into a random forest, 500 trees, balanced class weights, fixed seed. No hyperparameter search.
+
+### The evaluation matters more than the model
+
+With 40 actives against 1,179 decoys it is easy to produce a flattering number by accident. Two things guard against it.
+
+**Scaffold splitting.** Compounds are grouped by Bemis-Murcko scaffold and split with `StratifiedGroupKFold`, so no scaffold appears in both training and test folds. A random split would place close analogues on both sides, and the model would be graded on recognising molecules it had already seen.
+
+**A label-shuffled control, run ten times.** A single scramble gave AUC 0.636 with a bootstrap interval that excluded 0.5, which looks like a leak but is not. The bootstrap measures precision within one scramble, not variation between scrambles. Across ten scrambles the mean AUC was 0.490 for the Morgan model and 0.499 for the interaction model, spanning 0.39 to 0.58, and **no scrambled run came within 0.2 of the real result**. That is the correct null, and it is clean.
+
+### Results
+
+All four methods ranking the same 1,219 compounds, scored with the same functions as the Vina benchmark above.
+
+| Ranking method | ROC AUC | 95% CI | EF 1% | EF 5% |
+|---|---|---|---|---|
+| Vina score | 0.709 | 0.591 to 0.818 | 15.2× (6/12) | 7.5× (15/61) |
+| Heavy atom count, no docking | 0.576 | 0.470 to 0.680 | 5.1× (2/12) | 3.0× (6/61) |
+| **Random forest, Morgan fingerprints** | **0.875** | 0.780 to 0.952 | **30.5× (12/12)** | 16.5× (33/61) |
+| Random forest, interaction fingerprints | 0.794 | 0.687 to 0.888 | 25.4× (10/12) | 11.5× (23/61) |
+
+<p align="center">
+  <img src="results/ml/roc_comparison.png" width="55%" alt="ROC curves for all four ranking methods">
+</p>
+<p align="center"><em>All four methods on the same 1,219 compounds. The Morgan curve reaches a true positive rate of 0.825, exactly 33 of 40 actives, at almost zero false positives, then goes flat.</em></p>
+
+Both models beat Vina and the intervals barely overlap, so the difference is not noise. The ligand-only model also beats the structure-based one, which is the first sign that the docked geometry is not what is carrying the result.
+
+### The headline number is not the finding
+
+An AUC of 0.875 with 12 of 12 in the top 1% is strong enough that I went looking for the reason rather than reporting it and stopping.
+
+The flat section of the green ROC curve is the answer. The model finds 33 actives almost perfectly and then finds nothing for the next 60% of the library. Those remaining seven are the compounds that matter here.
+
+I defined small actives structurally, not by score: the sorted active sizes jump from 21 heavy atoms straight to 26, so the cutoff is 21, giving twelve compounds. Median ranks out of 1,219:
+
+| Method | 12 small actives | 28 larger actives |
+|---|---|---|
+| Vina score | 1094 | 46 |
+| Heavy atom count | 1065 | 155 |
+| Random forest, Morgan | 550 | 14 |
+| Random forest, interaction FP | 908 | 18 |
+
+Those twelve split cleanly in two.
+
+**Five were rescued**, from Vina ranks of 673 to 970 up to Morgan ranks of 27 to 37. They are tacrine, its dichloro analogue, N-benzylpiperidine and two related aminoquinolines. Every one of them is a **substructure of the large actives** the model trained on: the tacrine core sits inside the bivalent tacrine dimers, and N-benzylpiperidine is the donepezil pharmacophore. Scaffold splitting keeps whole scaffolds apart, but a Morgan fingerprint encodes fragments, so recognition transfers across the split. Tacrine and its analogue share a scaffold group and were held out together, and the model still placed them at 27 and 29 without ever seeing that scaffold.
+
+**Seven were not rescued at all.** They are edrophonium and its methyl and methoxy analogues, trimethylammonium phenols at 12 to 13 heavy atoms that bind the catalytic anionic site. Vina ranks them around 1,100. The Morgan model ranks them 500 to 1,126. Their scaffold reduces to bare benzene, they are held out as a block, and there is nothing resembling them left in the training data.
+
+So the honest reading is this. **The ligand-based model rescues small actives that are fragments of larger actives it has seen, and fails completely on a chemically unrelated series. It is recognising known pharmacophore fragments, not learning what binds acetylcholinesterase.** Neither Vina nor either model finds the edrophonium-type inhibitors. The failure mode I identified in the docking benchmark is narrowed by machine learning, not solved by it.
+
+### What the interaction model keys on
+
+<p align="center">
+  <img src="results/ml/ifp_feature_importance.png" width="62%" alt="Top 15 interaction features by random forest importance">
+</p>
+<p align="center"><em>Fitted on all 1,219 compounds for interpretation only. Every performance number above comes from out-of-fold predictions.</em></p>
+
+Pi-stacking with Trp86 dominates, at roughly 1.5 times the next feature. Then pi-stacking with Tyr341 and Trp286, van der Waals contacts at Gly121 and Ser125, a hydrogen bond acceptor at Phe295, and contacts with Phe297, Phe338, His447 and Glu202.
+
+That is the catalytic anionic site, the peripheral anionic site, the oxyanion hole, the acyl pocket and the catalytic triad histidine, recovered from 1,219 docked poses and 40 labels with no prior knowledge supplied. It matches the dual-binding-site model AChE inhibitors were designed around. Impurity-based importances are biased when features correlate and credit is shared between correlated bits, so these are associations in this dataset rather than evidence about what drives affinity.
+
+### Limitations of this extension
+
+- **Provenance, not just chemistry.** The 40 actives come from BindingDB, the decoys from ZINC. DEKOIS matched them on weight, logP, charge, hydrogen bonding and flexibility, but not on origin. Published inhibitors share synthetic motifs that catalogue compounds do not, and a Morgan fingerprint sees exactly those. Part of the 0.875 may be the model recognising literature compounds rather than binders. Scaffold splitting does not protect against this, because the artefact runs through the whole active set.
+- **Forty actives.** Every interval here is wide for that reason, and the fold holding the seven edrophonium analogues carries 13 actives while others carry 6 or 7, because whole scaffolds cannot be divided.
+- **The interaction fingerprints inherit Vina's errors.** A wrong pose gives wrong features, and nothing here detects that.
+- **One target.** None of this says whether the same comparison holds elsewhere.
+- No deep learning is involved, and none is claimed.
+
+### Reproducing it
+
+```bash
+pdb2pqr --ff=AMBER --with-ph=7.4 --titration-state-method=propka \
+        --pdb-output=prep/receptor_A_H.pdb prep/receptor_A.pdb prep/receptor_A.pqr
+```
+
+Then run `scripts/06_ml_features.ipynb`, `07_ml_models.ipynb` and `08_ml_analysis.ipynb` in order. Seeds are fixed throughout. Shared functions live in `scripts/ml_utils.py`, and all outputs land in `results/ml/`.
+
+
 ## References
 
 - Eberhardt J, Santos-Martins D, Tillack AF, Forli S. AutoDock Vina 1.2.0: new docking methods, expanded force field, and Python bindings. *J Chem Inf Model* 2021, 61, 3891-3898.
 - Bauer MR, Ibrahim TM, Vogel SM, Boeckler FM. Evaluation and optimization of virtual screening workflows with DEKOIS 2.0. *J Chem Inf Model* 2013, 53, 1447-1462.
 - Cheung J, et al. Structures of human acetylcholinesterase in complex with pharmacologically important ligands. *J Med Chem* 2012, 55, 10282-10286. (PDB 4EY7)
+- Bouysset C, Fiorucci S. ProLIF: a library to encode molecular interactions as fingerprints. *J Cheminform* 2021, 13, 72. https://doi.org/10.1186/s13321-021-00548-6
+- Dolinsky TJ, Nielsen JE, McCammon JA, Baker NA. PDB2PQR: an automated pipeline for the setup of Poisson-Boltzmann electrostatics calculations. *Nucleic Acids Res* 2004, 32, W665-W667. https://doi.org/10.1093/nar/gkh381
+- Pedregosa F, et al. Scikit-learn: machine learning in Python. *J Mach Learn Res* 2011, 12, 2825-2838.
 
 ## Author
 
